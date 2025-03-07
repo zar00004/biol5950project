@@ -1,0 +1,80 @@
+# makes file the correct format
+dos2unix extract_fatty_acid_genes.bash
+
+# installing seqkit
+wget https://github.com/shenwei356/seqkit/releases/download/v2.3.1/seqkit_linux_amd64.tar.gz
+tar -xvzf seqkit_linux_amd64.tar.gz seqkit
+chmod +x seqkit
+mv seqkit ~/biol5950/
+export PATH=$HOME/biol5950:$PATH
+
+# running the script to extract genes
+chmod +x extract_fatty_acid_genes.bash
+./extract_fatty_acid_genes.bash
+head intestine_fatty_acid_genes.faa
+# make sure FASTA protein sequence is shown
+
+# make a file with sequences for all genes across all strains
+cat burongisda_fatty_acid_genes.faa intestine_fatty_acid_genes.faa strainA_fatty_acid_genes.faa strainB_fatty_acid_genes.faa strainC_fatty_acid_genes.faa > all_fatty_acid_genes.faa
+
+
+# make separate files for each gene, each resulting file has the aligned sequences for the same gene from all strains
+# convert to fasta and check that protein sequences don't have unexpected line breaks
+seqkit seq -w 0 all_fatty_acid_genes_labeled.faa -o all_fatty_acid_genes_labeled.fasta
+grep ">" all_fatty_acid_genes_labeled.fasta -A 1 | head -20
+# clean gene names by replacing brackets with parenthesis to avoid problem with awk later
+sed 's/\[/(/g; s/\]/)/g' all_fatty_acid_genes_labeled.fasta > all_fatty_acid_genes_cleaned.fasta
+# ready to make separate files for each gene
+declare -A gene_map
+gene_map=( 
+    ["3-oxoacyl-(acyl-carrier-protein) reductase"]="FabG"
+    ["Enoyl-(acyl-carrier-protein) reductase (NADPH)"]="FabI"
+    ["3-hydroxyacyl-(acyl-carrier-protein) dehydratase"]="FabZ"
+    ["Acetyl-coenzyme A carboxylase carboxyl transferase subunit alpha"]="AccA"
+    ["Biotin carboxyl carrier protein of acetyl-CoA carboxylase"]="AccB"
+    ["Biotin carboxylase"]="AccC"
+    ["Acetyl-coenzyme A carboxylase carboxyl transferase subunit beta"]="AccD"
+)
+
+for desc in "${!gene_map[@]}"; do
+    fab_name="${gene_map[$desc]}"  # Get Fab gene name for file naming
+
+    awk -v desc="$desc" '
+    /^>/ {
+        header = $0;
+        getline seq;
+        if (index(header, desc) > 0) {  # Match full description
+            print header;
+            print seq;
+        }
+    }' all_fatty_acid_genes_cleaned.fasta > "${fab_name}_${desc// /_}.fasta"
+done
+
+
+# whole genome SNP analysis to contruct phylogenetic trees
+module load snippy
+snippy --outdir snippy_intestine --ref burongisda.fasta --ctgs intestine.fasta --cpus 4
+snippy --outdir snippy_strainA --ref burongisda.fasta --ctgs strainA.fasta --cpus 4
+snippy --outdir snippy_strainB --ref burongisda.fasta --ctgs strainB.fasta --cpus 4
+snippy --outdir snippy_strainC --ref burongisda.fasta --ctgs strainC.fasta --cpus 4
+snippy-core --ref burongisda.fasta --prefix snippy_core snippy_*
+
+
+
+
+# ready to make separate files for each gene, this time with nucleotide sequence instead of protein sequence
+dos2unix extract_fatty_acid_genes_ffn.bash
+chmod +x extract_fatty_acid_genes_ffn.bash
+./extract_fatty_acid_genes_ffn.bash
+
+#rename to put strain name at beginning of each gene sequence
+sed -i 's/^>/&strainA_/' strainA_fatty_acid_genes.ffn
+sed -i 's/^>/&strainB_/' strainB_fatty_acid_genes.ffn
+sed -i 's/^>/&strainC_/' strainC_fatty_acid_genes.ffn
+sed -i 's/^>/&burongisda_/' burongisda_fatty_acid_genes.ffn
+sed -i 's/^>/&intestine_/' intestine_fatty_acid_genes.ffn
+
+cat burongisda_fatty_acid_genes.ffn intestine_fatty_acid_genes.ffn strainA_fatty_acid_genes.ffn strainB_fatty_acid_genes.ffn strainC_fatty_acid_genes.ffn > all_fatty_acid_genes.ffn
+sed -E 's/>([a-zA-Z0-9]+)_[A-Z0-9]+_([0-9]+) (.+)/>\1_\2_\3/' -i all_fatty_acid_genes.ffn
+
+sed 's/\[/(/g; s/\]/)/g' all_fatty_acid_genes.ffn > all_fatty_acid_genes.ffn
